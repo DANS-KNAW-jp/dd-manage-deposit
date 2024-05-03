@@ -99,23 +99,44 @@ public class DepositPropertiesDAOFindSelectionTest extends AbstractDatabaseTest 
                 "Description3", now.minusDays(3), "Location3", 3000L, now.plusSeconds(6)),
             new DepositProperties("Id4", "User2", "Bag4", "State4",
                 "Description4", now.minusDays(1), "Location4", 4000L, now.plusNanos(8)),
-            new DepositProperties("Id5", "User3", "Bag5", "State5",
+            new DepositProperties("Id5", "User2", "Bag5", "State5",
                 "Description5", now.plusDays(1), "Location5", 5000L, now.plusHours(10)),
-            new DepositProperties("Id6", "User3", "Bag6", "State6",
+            new DepositProperties("Id6", "User2", "Bag6", "State6",
                 "Description6", now.plusDays(3), "Location6", 6000L, now.plusMinutes(12))
         );
         daoTestExtension.inTransaction(() -> dps.forEach(dp -> dao.create(dp)));
 
+        var sqlLogger = captureLog(Level.DEBUG, "org.hibernate.SQL");
+        var valuesLogger = captureLog(Level.TRACE, "org.hibernate.type.descriptor.sql.BasicBinder");
+
         // Create query parameters with a fixed order
+        var start1 = now.minusDays(4).format(ISO_LOCAL_DATE);
+        var end1 = now.minusDays(2).format(ISO_LOCAL_DATE);
+        var start2 = now.format(ISO_LOCAL_DATE);
+        var end2 = now.plusDays(2).format(ISO_LOCAL_DATE);
         var queryParameters = new LinkedHashMap<String, List<String>>();
         queryParameters.put("user", List.of("User2"));
-        queryParameters.put("startdate", List.of(now.minusDays(4).format(ISO_LOCAL_DATE)));
-        queryParameters.put("enddate", List.of(now.plusDays(2).format(ISO_LOCAL_DATE)));
+        queryParameters.put("startdate", List.of(start1, start2));
+        queryParameters.put("enddate", List.of(end1, end2));
 
         var results = daoTestExtension.inTransaction(() ->
             // method under test
             dao.findSelection(queryParameters)
         );
+
+        // Assert generated where clause and bound values
+        var valueMessages = valuesLogger.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+        var sqlMessages = sqlLogger.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+        assertThat(sqlMessages.get(0))
+            .endsWith(" where depositpro0_.depositor=? and (depositpro0_.creation_date between ? and ? or depositpro0_.creation_date between ? and ?)");
+        assertThat(valueMessages).isEqualTo(List.of(
+            "binding parameter [1] as [VARCHAR] - [%s]".formatted("User2"),
+            "binding parameter [2] as [VARCHAR] - [%s]".formatted(start1+"T00:00Z"),
+            "binding parameter [3] as [VARCHAR] - [%s]".formatted(end1+"T00:00Z"),
+            "binding parameter [4] as [VARCHAR] - [%s]".formatted(start2+"T00:00Z"),
+            "binding parameter [5] as [VARCHAR] - [%s]".formatted(end2+"T00:00Z")
+        ));
+        // TODO fix the code that generates: ... and (dct>start1 or dct>start2) and (dct<end1 or dct<end2)
 
         // Assert that the result contains the expected DepositProperties
         assertThat(results)
