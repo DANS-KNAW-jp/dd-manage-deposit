@@ -22,9 +22,11 @@ import nl.knaw.dans.managedeposit.core.DepositProperties;
 import org.junit.jupiter.api.Test;
 
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 
+import static java.time.format.DateTimeFormatter.ISO_LOCAL_DATE;
 import static nl.knaw.dans.managedeposit.TestUtils.captureLog;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -81,5 +83,47 @@ public class DepositPropertiesDAOFindSelectionTest extends AbstractDatabaseTest 
         assertThat(results)
             .extracting(DepositProperties::getDepositId)
             .containsExactlyInAnyOrder("Id3", "Id4", "Id5", "Id6");
+    }
+
+    @Test
+    public void should_return_records_for_specified_user_and_period() {
+
+        // Create a list of DepositProperties objects and persist them
+        var now = OffsetDateTime.now();
+        var dps = List.of(
+            new DepositProperties("Id1", "User1", "Bag1", "State1",
+                "Description1", now.minusDays(10), "Location1", 1000L, now.plusHours(2)),
+            new DepositProperties("Id2", "User1", "Bag2", "State2",
+                "Description2", now.minusDays(5), "Location2", 2000L, now.plusMinutes(4)),
+            new DepositProperties("Id3", "User2", "Bag3", "State3",
+                "Description3", now.minusDays(3), "Location3", 3000L, now.plusSeconds(6)),
+            new DepositProperties("Id4", "User2", "Bag4", "State4",
+                "Description4", now.minusDays(1), "Location4", 4000L, now.plusNanos(8)),
+            new DepositProperties("Id5", "User3", "Bag5", "State5",
+                "Description5", now.plusDays(1), "Location5", 5000L, now.plusHours(10)),
+            new DepositProperties("Id6", "User3", "Bag6", "State6",
+                "Description6", now.plusDays(3), "Location6", 6000L, now.plusMinutes(12))
+        );
+        daoTestExtension.inTransaction(() -> dps.forEach(dp -> dao.create(dp)));
+
+        // Create query parameters with a fixed order
+        var queryParameters = new LinkedHashMap<String, List<String>>();
+        queryParameters.put("user", List.of("User2"));
+        queryParameters.put("startdate", List.of(now.minusDays(4).format(ISO_LOCAL_DATE)));
+        queryParameters.put("enddate", List.of(now.plusDays(2).format(ISO_LOCAL_DATE)));
+
+        var results = daoTestExtension.inTransaction(() ->
+            // method under test
+            dao.findSelection(queryParameters)
+        );
+
+        // Assert that the result contains the expected DepositProperties
+        assertThat(results)
+            .hasSize(2)
+            .extracting(DepositProperties::getDepositor)
+            .containsOnly("User2");
+        assertThat(results)
+            .extracting(DepositProperties::getDepositId)
+            .containsExactlyInAnyOrder("Id3", "Id4");
     }
 }
