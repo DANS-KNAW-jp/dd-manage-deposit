@@ -20,6 +20,7 @@ import nl.knaw.dans.managedeposit.core.DepositProperties;
 import org.junit.jupiter.api.Test;
 
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -29,26 +30,30 @@ public class DepositPropertiesDAODeleteSelectionTest extends AbstractDatabaseTes
 
     @Test
     public void should_delete_records_for_specified_users() {
-        var testUser = "User1";
 
         // Create a list of DepositProperties objects and persist them
         var now = OffsetDateTime.now();
+
+        // Create a list of DepositProperties objects and persist them
         var dps = List.of(
-            new DepositProperties("Id1", testUser, "Bag1", "State1",
+            new DepositProperties("Id1", "User1", "Bag1", "State1",
                 "Description1", now.plusHours(1), "Location1", 1000L, now.plusHours(2)),
-            new DepositProperties("Id2", testUser, "Bag2", "State2",
+            new DepositProperties("Id2", "User1", "Bag2", "State2",
                 "Description2", now.plusMinutes(3), "Location2", 2000L, now.plusMinutes(4)),
             new DepositProperties("Id3", "User2", "Bag3", "State3",
                 "Description3", now.plusSeconds(5), "Location3", 3000L, now.plusSeconds(6)),
             new DepositProperties("Id4", "User2", "Bag4", "State4",
-                "Description4", now.plusNanos(7), "Location4", 4000L, now.plusNanos(8))
+                "Description4", now.plusNanos(7), "Location4", 4000L, now.plusNanos(8)),
+            new DepositProperties("Id5", "User3", "Bag5", "State5",
+                "Description5", now.plusHours(9), "Location5", 5000L, now.plusHours(10)),
+            new DepositProperties("Id6", "User3", "Bag6", "State6",
+                "Description6", now.plusMinutes(11), "Location6", 6000L, now.plusMinutes(12))
         );
         daoTestExtension.inTransaction(() -> dps.forEach(dp -> dao.create(dp)));
 
-        // Create query parameters
-        var queryParameters = Map.of(
-            "user", List.of(testUser)
-        );
+        // Create query parameters with a fixed order
+        var queryParameters = new LinkedHashMap<String, List<String>>();
+        queryParameters.put("user", List.of("User2", "User3"));
 
         var deletedCount = daoTestExtension.inTransaction(() ->
             // method under test
@@ -56,7 +61,7 @@ public class DepositPropertiesDAODeleteSelectionTest extends AbstractDatabaseTes
         );
 
         // Assert that the correct number of records were deleted
-        assertThat(deletedCount).isEqualTo(2);
+        assertThat(deletedCount).isEqualTo(4);
 
         // Assert that the deleted records no longer exists
         assertThat(dao.findSelection(queryParameters)).isEmpty();

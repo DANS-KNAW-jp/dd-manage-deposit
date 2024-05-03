@@ -22,8 +22,8 @@ import nl.knaw.dans.managedeposit.core.DepositProperties;
 import org.junit.jupiter.api.Test;
 
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 import static nl.knaw.dans.managedeposit.TestUtils.captureLog;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,7 +32,6 @@ public class DepositPropertiesDAOFindSelectionTest extends AbstractDatabaseTest 
 
     @Test
     public void should_return_records_for_specified_users() {
-        var testUser = "User2";
 
         // Create a list of DepositProperties objects and persist them
         var now = OffsetDateTime.now();
@@ -41,9 +40,9 @@ public class DepositPropertiesDAOFindSelectionTest extends AbstractDatabaseTest 
                 "Description1", now.plusHours(1), "Location1", 1000L, now.plusHours(2)),
             new DepositProperties("Id2", "User1", "Bag2", "State2",
                 "Description2", now.plusMinutes(3), "Location2", 2000L, now.plusMinutes(4)),
-            new DepositProperties("Id3", testUser, "Bag3", "State3",
+            new DepositProperties("Id3", "User2", "Bag3", "State3",
                 "Description3", now.plusSeconds(5), "Location3", 3000L, now.plusSeconds(6)),
-            new DepositProperties("Id4", testUser, "Bag4", "State4",
+            new DepositProperties("Id4", "User2", "Bag4", "State4",
                 "Description4", now.plusNanos(7), "Location4", 4000L, now.plusNanos(8)),
             new DepositProperties("Id5", "User3", "Bag5", "State5",
                 "Description5", now.plusHours(9), "Location5", 5000L, now.plusHours(10)),
@@ -55,10 +54,9 @@ public class DepositPropertiesDAOFindSelectionTest extends AbstractDatabaseTest 
         var sqlLogger = captureLog(Level.DEBUG, "org.hibernate.SQL");
         var valuesLogger = captureLog(Level.TRACE, "org.hibernate.type.descriptor.sql.BasicBinder");
 
-        // Create query parameters
-        var queryParameters = Map.of(
-            "user", List.of(testUser)
-        );
+        // Create query parameters with a fixed order
+        var queryParameters = new LinkedHashMap<String, List<String>>();
+        queryParameters.put("user", List.of("User2", "User3"));
 
         var results = daoTestExtension.inTransaction(() ->
             // method under test
@@ -67,20 +65,21 @@ public class DepositPropertiesDAOFindSelectionTest extends AbstractDatabaseTest 
 
         // Assert generated where clause and bound values
         var sqlMessages = sqlLogger.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
-        assertThat(sqlMessages.get(0)) // the order of the predicates is not guaranteed
-            .endsWith("where depositpro0_.depositor=?");
+        assertThat(sqlMessages.get(0))
+            .endsWith(" from deposit_properties depositpro0_ where depositpro0_.depositor=? or depositpro0_.depositor=?");
         var valueMessages = valuesLogger.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
         assertThat(valueMessages).isEqualTo(List.of(
-            "binding parameter [1] as [VARCHAR] - [%s]".formatted(testUser)
+            "binding parameter [1] as [VARCHAR] - [%s]".formatted("User2"),
+            "binding parameter [2] as [VARCHAR] - [%s]".formatted("User3")
         ));
 
         // Assert that the result contains the expected DepositProperties
         assertThat(results)
-            .hasSize(2)
+            .hasSize(4)
             .extracting(DepositProperties::getDepositor)
-            .containsOnly(testUser);
+            .containsOnly("User2", "User3");
         assertThat(results)
             .extracting(DepositProperties::getDepositId)
-            .containsExactlyInAnyOrder("Id3", "Id4");
+            .containsExactlyInAnyOrder("Id3", "Id4", "Id5", "Id6");
     }
 }
