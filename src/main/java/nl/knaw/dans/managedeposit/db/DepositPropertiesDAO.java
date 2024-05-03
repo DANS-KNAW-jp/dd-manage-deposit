@@ -28,15 +28,20 @@ import javax.persistence.criteria.CriteriaQuery;
 import javax.persistence.criteria.CriteriaUpdate;
 import javax.persistence.criteria.Predicate;
 import javax.persistence.criteria.Root;
-import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
+
+import static java.lang.Boolean.parseBoolean;
+import static java.lang.String.join;
+import static java.time.format.DateTimeFormatter.ISO_LOCAL_DATE;
 
 @SuppressWarnings("resource")
 public class DepositPropertiesDAO extends AbstractDAO<DepositProperties> {
@@ -99,73 +104,66 @@ public class DepositPropertiesDAO extends AbstractDAO<DepositProperties> {
         return Optional.of(query.executeUpdate());
     }
 
-    private Predicate buildQueryCriteria(Map<String, List<String>> queryParameters, CriteriaBuilder criteriaBuilder, Root<DepositProperties> root) {
-        List<Predicate> predicates = new ArrayList<>();
-        Predicate predicate;
+    private Predicate buildQueryCriteria(Map<String, List<String>> queryParameters, CriteriaBuilder criteriaBuilder, Root<DepositProperties> root) throws IllegalArgumentException {
+        var lowerCaseQueryParameters = new HashMap<String, List<String>>();
+        queryParameters.forEach((key, value) -> lowerCaseQueryParameters.put(key.toLowerCase(), value));
 
-        for (String key : queryParameters.keySet()) {
-            List<String> values = queryParameters.get(key);
-            String parameter = key.toLowerCase();
-            //javax.persistence.criteria
-            Predicate orPredicateItem;
-            List<Predicate> orPredicatesList = new ArrayList<>();
-            for (String value : values) {
-                switch (parameter) {
-                    case "depositid":
-                        orPredicateItem = criteriaBuilder.equal(root.get("depositId"), value);
-                        break;
-
-                    case "user":
-                        orPredicateItem = criteriaBuilder.equal(root.get("depositor"), value);
-                        break;
-
-                    case "deleted":
-                        if (Boolean.parseBoolean(value))
-                            orPredicateItem = criteriaBuilder.isTrue(root.get("deleted"));
-                        else
-                            orPredicateItem = criteriaBuilder.isFalse(root.get("deleted"));
-                        break;
-
-                    case "state":
-                        orPredicateItem = criteriaBuilder.equal(root.get("depositState"), value);
-                        break;
-
-                    case "startdate":
-                    case "enddate":
-                        if (value.isEmpty()) {
-                            orPredicateItem = criteriaBuilder.isNull(root.get("depositCreationTimestamp"));
-                        }
-                        else {
-                            try {
-                                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-                                LocalDate date = LocalDate.parse(value, formatter);
-                                var asked_date = OffsetDateTime.of(date.atStartOfDay(), ZoneOffset.UTC);
-
-                                if (parameter.equals("startdate"))
-                                    orPredicateItem = criteriaBuilder.greaterThan(root.get("depositCreationTimestamp"), asked_date);
-                                else
-                                    orPredicateItem = criteriaBuilder.lessThan(root.get("depositCreationTimestamp"), asked_date);
-                            }
-                            catch (DateTimeException e) {
-                                log.warn("Error parsing the date: {}", e.getMessage());
-                                continue;
-                            }
-                        }
-                        break;
-
-                    default:
-                        orPredicateItem = criteriaBuilder.equal(root.get(key), value);
-                }
-                orPredicatesList.add(orPredicateItem);
-            }
-
-            orPredicateItem = criteriaBuilder.or(orPredicatesList.toArray(new Predicate[0]));
-            predicates.add(orPredicateItem);
+        var paramToField = new LinkedHashMap<String, String>() {{
+            put("depositid", "depositId");
+            put("user", "depositor");
+            put("state", "depositState");
+            put("deleted", "deleted");
+            put("startdate", "depositCreationTimestamp");
+            put("enddate", "depositCreationTimestamp");
+        }};
+        var illegalKeys = lowerCaseQueryParameters.keySet().stream()
+            .filter(key -> !paramToField.containsKey(key))
+            .collect(Collectors.toSet());
+        if (!illegalKeys.isEmpty()) {
+            log.error("The following query parameters are ignored: " + join(", ", illegalKeys));
         }
 
-        predicate = criteriaBuilder.and(predicates.toArray(new Predicate[0]));
+        var predicates = new ArrayList<Predicate>();
+        if (paramToField.get("startdate").isEmpty() || paramToField.get("enddate").isEmpty()) {
+            predicates.add(criteriaBuilder.isNull(root.get("depositCreationTimestamp")));
+            // TODO log.error if the other is not empty: nothing will be found
+        }
+        paramToField.keySet().forEach(paramName -> {
+            var fieldName = paramToField.get(paramName);
+            var orPredicates = new ArrayList<Predicate>();
+            var values = lowerCaseQueryParameters.get(paramName);
+            if (values != null) {
+                values.forEach(value -> {
+                    switch (paramName) {
+                        // TODO (perhaps outside the paramToField loop)
+                        //  turn: ... and (dct>start1 or dct>start2) and (dct<end1 or dct<end2)
+                        //  into: ... and ((dct between start1 and end1) or (dct between start2 and end2))
+                        //  or throw an exception in case of repeated start/end dates
+                        case "startdate":
+                            orPredicates.add(criteriaBuilder.greaterThan(root.get(fieldName), parseDate(value)));
+                            break;
+                        case "enddate":
+                            orPredicates.add(criteriaBuilder.lessThan(root.get(fieldName), parseDate(value)));
+                            break;
+                        case "deleted":
+                            orPredicates.add(criteriaBuilder.equal(root.get(fieldName), parseBoolean(value)));
+                            break;
+                        default:
+                            orPredicates.add(criteriaBuilder.equal(root.get(fieldName), value));
+                            break;
+                    }
+                });
+                predicates.add(criteriaBuilder.or(orPredicates.toArray(new Predicate[0])));
+            }
+        });
+        return criteriaBuilder.and(predicates.toArray(new Predicate[0]));
+    }
 
-        return predicate;
+    private static OffsetDateTime parseDate(String value) {
+        return LocalDate.parse(value, ISO_LOCAL_DATE)
+            .atStartOfDay()
+            .toInstant(ZoneOffset.UTC)
+            .atOffset(ZoneOffset.UTC);
     }
 
     public Optional<Integer> updateDeleteFlag(String depositId, boolean deleted) {

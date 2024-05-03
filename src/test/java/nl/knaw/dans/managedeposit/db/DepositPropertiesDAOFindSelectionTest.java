@@ -22,7 +22,6 @@ import nl.knaw.dans.managedeposit.core.DepositProperties;
 import org.junit.jupiter.api.Test;
 
 import java.time.OffsetDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 
@@ -136,7 +135,6 @@ public class DepositPropertiesDAOFindSelectionTest extends AbstractDatabaseTest 
             "binding parameter [4] as [VARCHAR] - [%s]".formatted(start2+"T00:00Z"),
             "binding parameter [5] as [VARCHAR] - [%s]".formatted(end2+"T00:00Z")
         ));
-        // TODO fix the code that generates: ... and (dct>start1 or dct>start2) and (dct<end1 or dct<end2)
 
         // Assert that the result contains the expected DepositProperties
         assertThat(results)
