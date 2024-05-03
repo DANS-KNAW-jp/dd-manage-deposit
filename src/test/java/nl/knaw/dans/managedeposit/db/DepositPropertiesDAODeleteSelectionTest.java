@@ -23,20 +23,27 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class DepositPropertiesDAODeleteSelectionTest extends AbstractDatabaseTest {
 
     @Test
-    public void should_delete_records_of_specified_user() {
-        var testUser = "testUser";
+    public void should_delete_records_for_specified_users() {
+        var testUser = "User1";
 
-        // Create a DepositProperties object and persist it
-        var dp = new DepositProperties("testId", testUser, "testBag", "testState",
-            "testDescription", OffsetDateTime.now(), "testLocation", 1000L, OffsetDateTime.now());
-        daoTestExtension.inTransaction(() -> dao.create(dp));
-        // TODO add more and prove that other users are not deleted
+        // Create a list of DepositProperties objects and persist them
+        var now = OffsetDateTime.now();
+        var dps = List.of(
+            new DepositProperties("Id1", testUser, "Bag1", "State1",
+                "Description1", now.plusHours(1), "Location1", 1000L, now.plusHours(2)),
+            new DepositProperties("Id2", testUser, "Bag2", "State2",
+                "Description2", now.plusMinutes(3), "Location2", 2000L, now.plusMinutes(4)),
+            new DepositProperties("Id3", "User2", "Bag3", "State3",
+                "Description3", now.plusSeconds(5), "Location3", 3000L, now.plusSeconds(6)),
+            new DepositProperties("Id4", "User2", "Bag4", "State4",
+                "Description4", now.plusNanos(7), "Location4", 4000L, now.plusNanos(8))
+        );
+        daoTestExtension.inTransaction(() -> dps.forEach(dp -> dao.create(dp)));
 
         // Create query parameters
         var queryParameters = Map.of(
@@ -49,10 +56,9 @@ public class DepositPropertiesDAODeleteSelectionTest extends AbstractDatabaseTes
         );
 
         // Assert that the correct number of records were deleted
-        assertEquals(1, deletedCount);
+        assertThat(deletedCount).isEqualTo(2);
 
-        // Assert that the deleted record no longer exists
-        var results = dao.findSelection(queryParameters);
-        assertTrue(results.isEmpty());
+        // Assert that the deleted records no longer exists
+        assertThat(dao.findSelection(queryParameters)).isEmpty();
     }
 }

@@ -26,20 +26,31 @@ import java.util.List;
 import java.util.Map;
 
 import static nl.knaw.dans.managedeposit.TestUtils.captureLog;
-import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class DepositPropertiesDAOFindSelectionTest extends AbstractDatabaseTest {
 
     @Test
     public void should_return_records_for_specified_users() {
-        var testUser = "testUser";
+        var testUser = "User2";
 
-        // Create a DepositProperties object and persist it
-        var dp = new DepositProperties("testId", testUser, "testBag", "testState",
-            "testDescription", OffsetDateTime.now(), "testLocation", 1000L, OffsetDateTime.now());
-        daoTestExtension.inTransaction(() -> dao.create(dp));
-        // TODO add more and prove that other users are not selected
+        // Create a list of DepositProperties objects and persist them
+        var now = OffsetDateTime.now();
+        var dps = List.of(
+            new DepositProperties("Id1", "User1", "Bag1", "State1",
+                "Description1", now.plusHours(1), "Location1", 1000L, now.plusHours(2)),
+            new DepositProperties("Id2", "User1", "Bag2", "State2",
+                "Description2", now.plusMinutes(3), "Location2", 2000L, now.plusMinutes(4)),
+            new DepositProperties("Id3", testUser, "Bag3", "State3",
+                "Description3", now.plusSeconds(5), "Location3", 3000L, now.plusSeconds(6)),
+            new DepositProperties("Id4", testUser, "Bag4", "State4",
+                "Description4", now.plusNanos(7), "Location4", 4000L, now.plusNanos(8)),
+            new DepositProperties("Id5", "User3", "Bag5", "State5",
+                "Description5", now.plusHours(9), "Location5", 5000L, now.plusHours(10)),
+            new DepositProperties("Id6", "User3", "Bag6", "State6",
+                "Description6", now.plusMinutes(11), "Location6", 6000L, now.plusMinutes(12))
+        );
+        daoTestExtension.inTransaction(() -> dps.forEach(dp -> dao.create(dp)));
 
         var sqlLogger = captureLog(Level.DEBUG, "org.hibernate.SQL");
         var valuesLogger = captureLog(Level.TRACE, "org.hibernate.type.descriptor.sql.BasicBinder");
@@ -54,18 +65,22 @@ public class DepositPropertiesDAOFindSelectionTest extends AbstractDatabaseTest 
             dao.findSelection(queryParameters)
         );
 
-        // Assert generated query.
+        // Assert generated where clause and bound values
         var sqlMessages = sqlLogger.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
         assertThat(sqlMessages.get(0)) // the order of the predicates is not guaranteed
             .endsWith("where depositpro0_.depositor=?");
         var valueMessages = valuesLogger.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
         assertThat(valueMessages).isEqualTo(List.of(
-            "binding parameter [1] as [VARCHAR] - [testUser]"
+            "binding parameter [1] as [VARCHAR] - [%s]".formatted(testUser)
         ));
 
         // Assert that the result contains the expected DepositProperties
-        assertEquals(1, results.size());
-        assertEquals("testId", results.get(0).getDepositId());
-        assertEquals(testUser, results.get(0).getDepositor());
+        assertThat(results)
+            .hasSize(2)
+            .extracting(DepositProperties::getDepositor)
+            .containsOnly(testUser);
+        assertThat(results)
+            .extracting(DepositProperties::getDepositId)
+            .containsExactlyInAnyOrder("Id3", "Id4");
     }
 }
