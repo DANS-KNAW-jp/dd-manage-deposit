@@ -145,4 +145,43 @@ public class DepositPropertiesDAOFindSelectionTest extends AbstractDatabaseTest 
             .extracting(DepositProperties::getDepositId)
             .containsExactlyInAnyOrder("Id3", "Id4");
     }
+
+    @Test
+    public void should_return_records_for_empty_startdate_and_no_enddate() {
+
+        // Create a list of DepositProperties objects and persist them
+        var now = OffsetDateTime.now();
+        var dps = List.of(
+            new DepositProperties("Id3", "User2", "Bag3", "State3",
+                "Description3", null, "Location3", 3000L, null),
+            new DepositProperties("Id4", "User2", "Bag4", "State4",
+                "Description4", now.minusDays(1), "Location4", 4000L, now.plusNanos(8))
+        );
+        daoTestExtension.inTransaction(() -> dps.forEach(dp -> dao.create(dp)));
+
+        var sqlLogger = captureLog(Level.DEBUG, "org.hibernate.SQL");
+        var valuesLogger = captureLog(Level.TRACE, "org.hibernate.type.descriptor.sql.BasicBinder");
+
+        // Create query parameters with a fixed order
+        var queryParameters = new LinkedHashMap<String, List<String>>();
+        queryParameters.put("startdate", List.of());
+
+        var results = daoTestExtension.inTransaction(() ->
+            // method under test
+            dao.findSelection(queryParameters)
+        );
+
+        // Assert generated where clause and bound values
+        var sqlMessages = sqlLogger.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+        assertThat(sqlMessages.get(0))
+            .endsWith(" from deposit_properties depositpro0_ where depositpro0_.deposit_creation_timestamp is null");
+        var valueMessages = valuesLogger.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+        assertThat(valueMessages).isEmpty();
+
+        // Assert that the result contains the expected DepositProperties
+        assertThat(results)
+            .hasSize(1)
+            .extracting(DepositProperties::getDepositId)
+            .containsExactlyInAnyOrder("Id3");
+    }
 }
