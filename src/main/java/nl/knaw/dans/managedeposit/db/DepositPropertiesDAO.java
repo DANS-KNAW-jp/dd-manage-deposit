@@ -124,7 +124,7 @@ public class DepositPropertiesDAO extends AbstractDAO<DepositProperties> {
         }
 
         var predicates = new ArrayList<Predicate>();
-        if (lowerCaseQueryParameters.get("startdate").isEmpty() || lowerCaseQueryParameters.get("enddate").isEmpty()) {
+        if (isEmpty(lowerCaseQueryParameters.get("startdate")) || isEmpty(lowerCaseQueryParameters.get("enddate"))) {
             predicates.add(criteriaBuilder.isNull(root.get("depositCreationTimestamp")));
             // TODO log.error if the other is not empty: nothing will be found
         }
@@ -157,6 +157,11 @@ public class DepositPropertiesDAO extends AbstractDAO<DepositProperties> {
             }
         });
         return criteriaBuilder.and(predicates.toArray(new Predicate[0]));
+    }
+
+    private boolean isEmpty(List<String> list) {
+        // Note that CollectionUtils.isEmpty returns true for null
+        return list != null && list.isEmpty();
     }
 
     private static OffsetDateTime parseDate(String value) {
