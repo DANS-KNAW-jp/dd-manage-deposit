@@ -124,7 +124,7 @@ public class DepositPropertiesDAO extends AbstractDAO<DepositProperties> {
         }
 
         var predicates = new ArrayList<Predicate>();
-        if (paramToField.get("startdate").isEmpty() || paramToField.get("enddate").isEmpty()) {
+        if (lowerCaseQueryParameters.get("startdate").isEmpty() || lowerCaseQueryParameters.get("enddate").isEmpty()) {
             predicates.add(criteriaBuilder.isNull(root.get("depositCreationTimestamp")));
             // TODO log.error if the other is not empty: nothing will be found
         }
@@ -132,7 +132,7 @@ public class DepositPropertiesDAO extends AbstractDAO<DepositProperties> {
             var fieldName = paramToField.get(paramName);
             var orPredicates = new ArrayList<Predicate>();
             var values = lowerCaseQueryParameters.get(paramName);
-            if (values != null) {
+            if (values != null && !values.isEmpty()) {
                 values.forEach(value -> {
                     switch (paramName) {
                         // TODO (perhaps outside the paramToField loop)
