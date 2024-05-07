@@ -46,7 +46,7 @@ public class DepositPropertiesDAOFindSelectionTest extends AbstractDatabaseTest 
             new DepositProperties("Id4", "User2", "Bag4", "State4",
                 "Description4", now.plusNanos(7), "Location4", 4000L, now.plusNanos(8)),
             new DepositProperties("Id5", "User3", "Bag5", "State5",
-                "Description5", now.plusHours(9), "Location5", 5000L, now.plusHours(10)),
+                "Description5", null, "Location5", 5000L, null),
             new DepositProperties("Id6", "User3", "Bag6", "State6",
                 "Description6", now.plusMinutes(11), "Location6", 6000L, now.plusMinutes(12))
         );
@@ -127,14 +127,14 @@ public class DepositPropertiesDAOFindSelectionTest extends AbstractDatabaseTest 
         var valueMessages = valuesLogger.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
         var sqlMessages = sqlLogger.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
         assertThat(sqlMessages.get(0))
-            .endsWith(" where depositpro0_.depositor=? and (depositpro0_.creation_date between ? and ? or depositpro0_.creation_date between ? and ?)");
+            .endsWith(" where (depositpro0_.deposit_creation_timestamp between ? and ? or depositpro0_.deposit_creation_timestamp between ? and ?) and depositpro0_.depositor=?");
         assertThat(valueMessages).isEqualTo(List.of(
-            "binding parameter [1] as [VARCHAR] - [%s]".formatted("User2"),
-            "binding parameter [2] as [VARCHAR] - [%s]".formatted(start1+"T00:00Z"),
-            "binding parameter [3] as [VARCHAR] - [%s]".formatted(end1+"T00:00Z"),
-            "binding parameter [4] as [VARCHAR] - [%s]".formatted(start2+"T00:00Z"),
-            "binding parameter [5] as [VARCHAR] - [%s]".formatted(end2+"T00:00Z")
-        ));
+            "binding parameter [1] as [TIMESTAMP] - [%s]".formatted(start1+"T00:00Z"),
+            "binding parameter [2] as [TIMESTAMP] - [%s]".formatted(end1+"T00:00Z"),
+            "binding parameter [3] as [TIMESTAMP] - [%s]".formatted(start2+"T00:00Z"),
+            "binding parameter [4] as [TIMESTAMP] - [%s]".formatted(end2+"T00:00Z"),
+            "binding parameter [5] as [VARCHAR] - [%s]".formatted("User2")
+            ));
 
         // Assert that the result contains the expected DepositProperties
         assertThat(results)
@@ -143,7 +143,7 @@ public class DepositPropertiesDAOFindSelectionTest extends AbstractDatabaseTest 
             .containsOnly("User2");
         assertThat(results)
             .extracting(DepositProperties::getDepositId)
-            .containsExactlyInAnyOrder("Id3", "Id4");
+            .containsExactlyInAnyOrder("Id3", "Id5");
     }
 
     @Test

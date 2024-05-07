@@ -26,6 +26,7 @@ import javax.persistence.criteria.CriteriaBuilder;
 import javax.persistence.criteria.CriteriaDelete;
 import javax.persistence.criteria.CriteriaQuery;
 import javax.persistence.criteria.CriteriaUpdate;
+import javax.persistence.criteria.Path;
 import javax.persistence.criteria.Predicate;
 import javax.persistence.criteria.Root;
 import java.time.LocalDate;
@@ -33,6 +34,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -113,50 +115,69 @@ public class DepositPropertiesDAO extends AbstractDAO<DepositProperties> {
             put("user", "depositor");
             put("state", "depositState");
             put("deleted", "deleted");
-            put("startdate", "depositCreationTimestamp");
-            put("enddate", "depositCreationTimestamp");
         }};
-        var illegalKeys = lowerCaseQueryParameters.keySet().stream()
-            .filter(key -> !paramToField.containsKey(key))
+        var allowedParamNames = new HashSet<>(paramToField.keySet());
+        allowedParamNames.addAll(List.of("startdate", "enddate"));
+        var illegalParamNames = lowerCaseQueryParameters.keySet().stream()
+            .filter(key -> !allowedParamNames.contains(key))
             .collect(Collectors.toSet());
-        if (!illegalKeys.isEmpty()) {
-            log.error("The following query parameters are ignored: " + join(", ", illegalKeys));
+        if (!illegalParamNames.isEmpty()) {
+            log.error("The following query parameters are ignored: " + join(", ", illegalParamNames));
         }
 
         var predicates = new ArrayList<Predicate>();
-        if (isEmpty(lowerCaseQueryParameters.get("startdate")) || isEmpty(lowerCaseQueryParameters.get("enddate"))) {
-            predicates.add(criteriaBuilder.isNull(root.get("depositCreationTimestamp")));
-            // TODO log.error if the other is not empty: nothing will be found
+
+        var startDates = lowerCaseQueryParameters.get("startdate");
+        var endDates = lowerCaseQueryParameters.get("enddate");
+        if (startDates != null || endDates != null) {
+            predicates.add(getDatePredicate(startDates, endDates, criteriaBuilder, root));
         }
+
         paramToField.keySet().forEach(paramName -> {
             var fieldName = paramToField.get(paramName);
             var orPredicates = new ArrayList<Predicate>();
             var values = lowerCaseQueryParameters.get(paramName);
             if (values != null && !values.isEmpty()) {
                 values.forEach(value -> {
-                    switch (paramName) {
-                        // TODO (perhaps outside the paramToField loop)
-                        //  turn: ... and (dct>start1 or dct>start2) and (dct<end1 or dct<end2)
-                        //  into: ... and ((dct between start1 and end1) or (dct between start2 and end2))
-                        //  or throw an exception in case of repeated start/end dates
-                        case "startdate":
-                            orPredicates.add(criteriaBuilder.greaterThan(root.get(fieldName), parseDate(value)));
-                            break;
-                        case "enddate":
-                            orPredicates.add(criteriaBuilder.lessThan(root.get(fieldName), parseDate(value)));
-                            break;
-                        case "deleted":
-                            orPredicates.add(criteriaBuilder.equal(root.get(fieldName), parseBoolean(value)));
-                            break;
-                        default:
-                            orPredicates.add(criteriaBuilder.equal(root.get(fieldName), value));
-                            break;
+                    if (paramName.equals("deleted")) {
+                        orPredicates.add(criteriaBuilder.equal(root.get(fieldName), parseBoolean(value)));
+                    }
+                    else {
+                        orPredicates.add(criteriaBuilder.equal(root.get(fieldName), value));
                     }
                 });
-                predicates.add(criteriaBuilder.or(orPredicates.toArray(new Predicate[0])));
+                if (!orPredicates.isEmpty())
+                    predicates.add(criteriaBuilder.or(orPredicates.toArray(new Predicate[0])));
             }
         });
         return criteriaBuilder.and(predicates.toArray(new Predicate[0]));
+    }
+
+    private Predicate getDatePredicate(List<String> startDates, List<String> endDates, CriteriaBuilder criteriaBuilder, Root<DepositProperties> root) {
+        Path<OffsetDateTime> timestamp = root.get("depositCreationTimestamp");
+        if (isEmpty(startDates) || isEmpty(endDates)) {
+            if (startDates != null && endDates != null)
+                throw new IllegalArgumentException("If startdate or enddate is empty, the other must not be specified");
+            return criteriaBuilder.isNull(root.get("depositCreationTimestamp"));
+        }
+        else if (startDates != null && startDates.size() == 1 && (endDates == null || endDates.isEmpty())) {
+            return (criteriaBuilder.greaterThanOrEqualTo(timestamp, parseDate(startDates.get(0))));
+        }
+        else if (endDates != null && endDates.size() == 1 && (startDates == null || startDates.isEmpty())) {
+            return criteriaBuilder.lessThanOrEqualTo(timestamp, parseDate(endDates.get(0)));
+        }
+        else if (startDates != null && endDates != null && startDates.size() == endDates.size()) {
+            var orPredicates = new ArrayList<Predicate>();
+            for (int i = 0; i < startDates.size(); i++) {
+                var startDate = parseDate(startDates.get(i));
+                var endDate = parseDate(endDates.get(i));
+                orPredicates.add(criteriaBuilder.between(timestamp, startDate, endDate));
+            }
+            return criteriaBuilder.or(orPredicates.toArray(new Predicate[0]));
+        }
+        else {
+            throw new IllegalArgumentException("Either a single 'startdate' or 'enddate' must be specified, or both must have the same number of values");
+        }
     }
 
     private boolean isEmpty(List<String> list) {
